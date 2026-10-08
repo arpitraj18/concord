@@ -1,0 +1,36 @@
+# Three independent fake gateways. Each one is a separate process so it can fail on its own.
+# Until Concord's ingestion exists, webhooks go to each simulator's own /dev/sink.
+x-simulator: &simulator
+  build:
+    context: .
+    dockerfile: gateway-simulator/Dockerfile
+  image: concord/gateway-simulator:dev
+  restart: unless-stopped
+
+services:
+  gateway-a:
+    <<: *simulator
+    ports: ["8081:8081"]
+    environment:
+      PORT: 8081
+      SIM_GATEWAY: A
+      SIM_WEBHOOK_SECRET: whsec_dev_gateway_a
+      SIM_API_KEY: key_dev_gateway_a
+
+  gateway-b:
+    <<: *simulator
+    ports: ["8082:8082"]
+    environment:
+      PORT: 8082
+      SIM_GATEWAY: B
+      SIM_WEBHOOK_SECRET: whsec_dev_gateway_b
+      SIM_API_KEY: key_dev_gateway_b
+
+  gateway-c:
+    <<: *simulator
+    ports: ["8083:8083"]
+    environment:
+      PORT: 8083
+      SIM_GATEWAY: C
+      SIM_WEBHOOK_SECRET: whsec_dev_gateway_c
+      SIM_API_KEY: key_dev_gateway_c

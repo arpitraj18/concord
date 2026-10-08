@@ -1,0 +1,16 @@
+{
+  "name": "chaos-1000",
+  "seed": 20260923,
+  "timeScale": 20,
+  "generate": { "count": 1000, "spreadMs": 60000, "stepGapMs": 5000 },
+  "faults": {
+    "dropRate": 0.05,
+    "duplicateRate": 0.3,
+    "maxExtraCopies": 3,
+    "newEventIdRate": 0.1,
+    "maxDelayMs": 8000,
+    "maxDuplicateDelayMs": 15000,
+    "contradictionRate": 0.02
+  },
+  "statusApi": { "errorRate": 0.05, "latencyMs": 20 }
+}

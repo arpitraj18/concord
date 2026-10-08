@@ -1,0 +1,18 @@
+{
+  "name": "missed-webhook-and-status-outage",
+  "seed": 7,
+  "payments": [
+    {
+      "steps": [
+        { "state": "AUTHORIZED", "atMs": 0 },
+        { "state": "CAPTURED", "atMs": 2000 }
+      ]
+    }
+  ],
+  "generate": { "count": 20, "spreadMs": 10000, "stepGapMs": 3000 },
+  "faults": { "dropRate": 0.3 },
+  "statusApi": {
+    "outages": [ { "fromMs": 5000, "toMs": 35000 } ],
+    "errorRate": 0.1
+  }
+}

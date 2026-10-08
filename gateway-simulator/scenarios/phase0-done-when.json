@@ -1,0 +1,22 @@
+{
+  "name": "captured-first-duplicate-authorized-drop-settled",
+  "seed": 42,
+  "payments": [
+    {
+      "paymentId": "pay_demo0000000001",
+      "orderId": "order_demo00000001",
+      "amount": 49900,
+      "currency": "INR",
+      "steps": [
+        { "state": "AUTHORIZED", "atMs": 0 },
+        { "state": "CAPTURED", "atMs": 1000 },
+        { "state": "SETTLED", "atMs": 6000 }
+      ]
+    }
+  ],
+  "directives": [
+    { "paymentId": "pay_demo0000000001", "state": "AUTHORIZED", "action": "DELAY", "delayMs": 4000 },
+    { "paymentId": "pay_demo0000000001", "state": "AUTHORIZED", "action": "DUPLICATE", "delayMs": 4500 },
+    { "paymentId": "pay_demo0000000001", "state": "SETTLED", "action": "DROP" }
+  ]
+}
