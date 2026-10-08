@@ -14,6 +14,7 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
+      # Docker is available on GitHub runners, so the Testcontainers S3 test runs here (it is skipped locally without Docker).
       - name: Build and test
         run: mvn -B verify
       - name: Upload test reports
@@ -22,3 +23,17 @@ jobs:
         with:
           name: surefire-reports
           path: "**/target/surefire-reports"
+
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.13.3"
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate

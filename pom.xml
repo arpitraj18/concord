@@ -20,15 +20,29 @@
 
     <modules>
         <module>gateway-simulator</module>
+        <module>ingestion</module>
     </modules>
 
     <properties>
         <java.version>21</java.version>
         <jqwik.version>1.9.3</jqwik.version>
+        <aws-sdk.version>2.55.12</aws-sdk.version>
+        <aws-lambda-core.version>1.4.0</aws-lambda-core.version>
+        <aws-lambda-events.version>3.16.1</aws-lambda-events.version>
+        <dynamodb-local.version>2.6.1</dynamodb-local.version>
+        <elasticmq.version>1.7.1</elasticmq.version>
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws-sdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>net.jqwik</groupId>
                 <artifactId>jqwik</artifactId>

@@ -16,8 +16,8 @@ gateway or an orchestrator.
 | Phase | What | State |
 |---|---|---|
 | 0 | Gateway simulators + seeded fault injection | **done** |
-| 1 | Ingestion + raw event log (Lambda, S3, SQS FIFO, dedup) | next |
-| 2 | Canonical state machine + DynamoDB state store | planned |
+| 1 | Ingestion + raw event log (Lambda, S3, SQS FIFO, dedup) | **done** |
+| 2 | Canonical state machine + DynamoDB state store | next |
 | 3 | Uncertainty resolver + exactly-once delivery (outbox) | planned |
 | 4 | Divergence detector + dashboard | planned |
 | 5 | AI layer: gateway onboarding, anomaly detection, incident explanations | planned |
@@ -49,6 +49,8 @@ Gateway simulators A/B/C ──webhooks (dup / late / reordered / dropped)──
 ```
 gateway-simulator/   Phase 0: three fake gateways with deterministic fault injection (Java 21, Spring Boot)
   scenarios/         Reusable scenario files
+ingestion/           Phase 1: verify, archive, dedupe, enqueue (plain Java 21; AWS Lambda or local server)
+infra/terraform/     AWS infrastructure (S3, DynamoDB, SQS FIFO, Lambda, API Gateway), LocalStack-capable
 docs/design/         One design note per phase: problem, options, choice, why
 docs/what-broke.md   Bugs found by fault injection (interview stories)
 scripts/             Helper scripts
@@ -62,9 +64,9 @@ Requirements: Java 21, Maven 3.9 (Docker optional).
 mvn verify                                   # build + all tests (unit, property-based, end-to-end)
 
 # run one gateway locally
-SIM_GATEWAY=A java -jar gateway-simulator/target/gateway-simulator-*.jar      # port 8081
+SIM_GATEWAY=A java -jar gateway-simulator/target/gateway-simulator-*-exec.jar      # port 8081
 
-# or all three gateways (A: 8081, B: 8082, C: 8083)
+# or the whole local pipeline: three gateways (8081-8083) -> ingestion (8080, in-memory)
 docker compose up --build
 ```
 
@@ -73,13 +75,24 @@ Drive it:
 ```bash
 curl -s localhost:8081/sim/info                                         # what gateway A speaks
 scripts/run-scenario.sh gateway-simulator/scenarios/phase0-done-when.json
-curl -s localhost:8081/dev/sink                                         # webhooks that arrived
+curl -s localhost:8081/dev/sink                                         # webhooks that arrived (simulator alone)
+curl -s localhost:8080/local/stats                                      # archived / enqueued (with docker compose)
 curl -s localhost:8081/v1/payments/pay_demo0000000001 \
      -H 'Authorization: Bearer key_dev_gateway_a'                       # status API (truth)
 ```
 
-See [docs/design/00-gateway-simulators.md](docs/design/00-gateway-simulators.md) for the full API and the
-reasoning behind it.
+Design notes, with the reasoning behind every decision:
+[Phase 0 — simulators](docs/design/00-gateway-simulators.md),
+[Phase 1 — ingestion](docs/design/01-ingestion.md).
+
+Deploy ingestion to AWS (or LocalStack with `-var localstack=true`):
+
+```bash
+mvn -pl ingestion -am package -DskipTests
+cd infra/terraform && cp terraform.tfvars.example terraform.tfvars   # set secrets + budget email
+terraform init && terraform apply
+terraform destroy                                                    # after every session
+```
 
 ## Measured results
 

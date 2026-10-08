@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars (git-ignored via *.tfvars) and fill in.
+aws_region  = "ap-south-1"
+environment = "dev"
+localstack  = false
+
+gateway_secrets = {
+  a = "whsec_dev_gateway_a"
+  b = "whsec_dev_gateway_b"
+  c = "whsec_dev_gateway_c"
+}
+
+budget_email = "you@example.com"
