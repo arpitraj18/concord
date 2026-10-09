@@ -1,7 +1,9 @@
-# Local pipeline without AWS: three fake gateways -> ingestion (in-memory backend).
+# Local pipeline without AWS: three fake gateways -> Concord (ingestion + state engine, in memory).
 #   docker compose up --build
 #   scripts/run-scenario.sh gateway-simulator/scenarios/chaos-1000.json http://localhost:8081
-#   curl localhost:8080/local/stats
+#   curl localhost:8080/local/stats       # ingestion
+#   curl localhost:8080/local/engine      # state engine
+#   curl localhost:8080/local/payments/a/<paymentId>
 x-simulator: &simulator
   build:
     context: .
@@ -14,8 +16,8 @@ services:
   ingestion:
     build:
       context: .
-      dockerfile: ingestion/Dockerfile
-    image: concord/ingestion:dev
+      dockerfile: state-engine/Dockerfile
+    image: concord/state-engine:dev
     ports: ["8080:8080"]
     environment:
       PORT: 8080

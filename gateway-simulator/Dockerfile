@@ -4,6 +4,7 @@ WORKDIR /src
 COPY pom.xml .
 COPY gateway-simulator/pom.xml gateway-simulator/
 COPY ingestion/pom.xml ingestion/
+COPY state-engine/pom.xml state-engine/
 RUN mvn -B -q -pl gateway-simulator -am dependency:go-offline
 COPY gateway-simulator/src gateway-simulator/src
 RUN mvn -B -q -pl gateway-simulator -am package -DskipTests

@@ -1,0 +1,18 @@
+{
+  "gateway": "C",
+  "version": 1,
+  "eventType": "/type",
+  "rules": [
+    { "eventType": "payment_intent.processing", "state": "PENDING" },
+    { "eventType": "payment_intent.amount_capturable_updated", "state": "AUTHORIZED" },
+    { "eventType": "payment_intent.succeeded", "state": "CAPTURED" },
+    { "eventType": "payment_intent.canceled", "state": "FAILED" },
+    { "eventType": "charge.refunded", "state": "REFUNDED" }
+  ],
+  "fields": {
+    "amount": { "pointers": ["/data/object/amount"], "unit": "MINOR" },
+    "currency": { "pointers": ["/data/object/currency"] },
+    "orderId": { "pointers": ["/data/object/metadata/order_id"] },
+    "occurredAt": { "pointers": ["/created"], "format": "EPOCH_SECONDS" }
+  }
+}

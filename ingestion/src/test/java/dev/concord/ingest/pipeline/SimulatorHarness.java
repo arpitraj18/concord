@@ -13,7 +13,7 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 
 /** Runs the Phase 0 gateway simulator inside the test JVM and drives it over its control API. */
-final class SimulatorHarness implements AutoCloseable {
+public final class SimulatorHarness implements AutoCloseable {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -21,7 +21,7 @@ final class SimulatorHarness implements AutoCloseable {
     private final String baseUrl;
     private final HttpClient http = HttpClient.newHttpClient();
 
-    SimulatorHarness(String gateway, String secret) {
+    public SimulatorHarness(String gateway, String secret) {
         // Command-line arguments, not builder.properties(): those are only defaults and lose to the
         // simulator's own application.yml, which silently made every run gateway A.
         app = new SpringApplicationBuilder(GatewaySimulatorApplication.class).run(
@@ -35,7 +35,7 @@ final class SimulatorHarness implements AutoCloseable {
         baseUrl = "http://127.0.0.1:" + app.getEnvironment().getProperty("local.server.port");
     }
 
-    String startRun(Map<String, Object> scenario) throws Exception {
+    public String startRun(Map<String, Object> scenario) throws Exception {
         HttpResponse<String> r = http.send(HttpRequest.newBuilder(URI.create(baseUrl + "/sim/runs"))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(scenario))).build(),
@@ -46,12 +46,12 @@ final class SimulatorHarness implements AutoCloseable {
         return JSON.readTree(r.body()).get("runId").asText();
     }
 
-    JsonNode get(String path) throws Exception {
+    public JsonNode get(String path) throws Exception {
         return JSON.readTree(http.send(HttpRequest.newBuilder(URI.create(baseUrl + path)).build(),
                 HttpResponse.BodyHandlers.ofString()).body());
     }
 
-    JsonNode awaitCompleted(String runId, Duration timeout) throws Exception {
+    public JsonNode awaitCompleted(String runId, Duration timeout) throws Exception {
         long deadline = System.nanoTime() + timeout.toNanos();
         JsonNode run;
         do {

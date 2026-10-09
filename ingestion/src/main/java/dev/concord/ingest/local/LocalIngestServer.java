@@ -59,6 +59,11 @@ public final class LocalIngestServer implements AutoCloseable {
         return new LocalIngestServer(port, service, memory, clock);
     }
 
+    /** Lets a host process (e.g. the local all-in-one runner) add its own endpoints to this server. */
+    public void addHandler(String path, com.sun.net.httpserver.HttpHandler handler) {
+        server.createContext(path, handler);
+    }
+
     public int port() {
         return server.getAddress().getPort();
     }

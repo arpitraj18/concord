@@ -17,8 +17,8 @@ gateway or an orchestrator.
 |---|---|---|
 | 0 | Gateway simulators + seeded fault injection | **done** |
 | 1 | Ingestion + raw event log (Lambda, S3, SQS FIFO, dedup) | **done** |
-| 2 | Canonical state machine + DynamoDB state store | next |
-| 3 | Uncertainty resolver + exactly-once delivery (outbox) | planned |
+| 2 | Canonical state machine + DynamoDB state store | **done** |
+| 3 | Uncertainty resolver + exactly-once delivery (outbox) | next |
 | 4 | Divergence detector + dashboard | planned |
 | 5 | AI layer: gateway onboarding, anomaly detection, incident explanations | planned |
 | 6 | Hardening, load/chaos testing, deployment | planned |
@@ -50,6 +50,7 @@ Gateway simulators A/B/C ──webhooks (dup / late / reordered / dropped)──
 gateway-simulator/   Phase 0: three fake gateways with deterministic fault injection (Java 21, Spring Boot)
   scenarios/         Reusable scenario files
 ingestion/           Phase 1: verify, archive, dedupe, enqueue (plain Java 21; AWS Lambda or local server)
+state-engine/        Phase 2: canonical state machine, gateway mappings (JSON), DynamoDB store, SQS worker, replay
 infra/terraform/     AWS infrastructure (S3, DynamoDB, SQS FIFO, Lambda, API Gateway), LocalStack-capable
 docs/design/         One design note per phase: problem, options, choice, why
 docs/what-broke.md   Bugs found by fault injection (interview stories)
@@ -66,7 +67,7 @@ mvn verify                                   # build + all tests (unit, property
 # run one gateway locally
 SIM_GATEWAY=A java -jar gateway-simulator/target/gateway-simulator-*-exec.jar      # port 8081
 
-# or the whole local pipeline: three gateways (8081-8083) -> ingestion (8080, in-memory)
+# or the whole local pipeline: three gateways (8081-8083) -> Concord (8080: ingestion + state engine, in memory)
 docker compose up --build
 ```
 
@@ -77,13 +78,15 @@ curl -s localhost:8081/sim/info                                         # what g
 scripts/run-scenario.sh gateway-simulator/scenarios/phase0-done-when.json
 curl -s localhost:8081/dev/sink                                         # webhooks that arrived (simulator alone)
 curl -s localhost:8080/local/stats                                      # archived / enqueued (with docker compose)
+curl -s localhost:8080/local/payments/a/pay_demo0000000001              # canonical state + history
 curl -s localhost:8081/v1/payments/pay_demo0000000001 \
      -H 'Authorization: Bearer key_dev_gateway_a'                       # status API (truth)
 ```
 
 Design notes, with the reasoning behind every decision:
 [Phase 0 — simulators](docs/design/00-gateway-simulators.md),
-[Phase 1 — ingestion](docs/design/01-ingestion.md).
+[Phase 1 — ingestion](docs/design/01-ingestion.md),
+[Phase 2 — state machine](docs/design/02-state-machine.md).
 
 Deploy ingestion to AWS (or LocalStack with `-var localstack=true`):
 

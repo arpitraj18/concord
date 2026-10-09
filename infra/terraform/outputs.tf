@@ -18,3 +18,15 @@ output "events_queue_url" {
 output "events_dlq_url" {
   value = aws_sqs_queue.events_dlq.url
 }
+
+output "payments_table" {
+  value = aws_dynamodb_table.payments.name
+}
+
+output "payments_stream_arn" {
+  value = aws_dynamodb_table.payments.stream_arn
+}
+
+output "state_worker_policy_arn" {
+  value = aws_iam_policy.state_worker.arn
+}

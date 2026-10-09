@@ -42,6 +42,11 @@ public final class InMemoryFifoQueue implements EventQueue {
         return List.copyOf(messages);
     }
 
+    /** Messages from position {@code from} on, in queue order; lets a local consumer drain incrementally. */
+    public synchronized List<IngestedEvent> messagesFrom(int from) {
+        return from >= messages.size() ? List.of() : List.copyOf(messages.subList(from, messages.size()));
+    }
+
     /** How many times send was called, including calls the dedup window absorbed. */
     public int sendCalls() {
         return sendCalls.get();

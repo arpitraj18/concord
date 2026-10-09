@@ -21,6 +21,7 @@
     <modules>
         <module>gateway-simulator</module>
         <module>ingestion</module>
+        <module>state-engine</module>
     </modules>
 
     <properties>

@@ -50,3 +50,31 @@ made the loser retry.
 (`responded ≤ archived ≤ attempts`), plus "every delivery was eventually acknowledged". Raised the
 local server's backlog to 1024. In AWS, API Gateway throttling plays the same role, which is why the
 Terraform sets rate and burst limits and why answering non-2xx is safe: the gateway will retry.
+
+## 2026-10-09 — A dropped webhook made Concord claim the payment was "unknown"
+
+**Phase:** 2 (state machine unit test)
+
+**What happened:** with `authorized` dropped and `captured` arriving first, the engine recorded the
+inferred path `CREATED → PENDING → UNKNOWN → CAPTURED`.
+
+**Why:** the inferred path was a breadth-first search over the transition graph. Both routes to
+CAPTURED have the same length, and UNKNOWN is declared before AUTHORIZED, so it was found first. The
+state was still legal, but the history said "the payment was in an unknown state", which is false and
+would have triggered the resolver for no reason.
+
+**Lesson / change:** "legal" is not the same as "true". Path-finding now tries the normal route first
+and uses UNKNOWN only when nothing else reaches the target.
+
+## 2026-10-09 — Docker builds would have failed: `-Dmaven.test.skip` skips the test-jar too
+
+**Phase:** 2 (packaging)
+
+**What happened:** the state engine reuses ingestion's test helpers through a test-jar. The Dockerfiles
+built with `-Dmaven.test.skip=true`, which also skips *producing* that test-jar, and Maven still
+resolves test-scoped dependencies before running a skipped plugin. A clean build failed with
+"Could not find artifact dev.concord:ingestion:jar:tests".
+
+**Lesson / change:** caught by simulating the Docker build from an empty local repository. Use
+`-DskipTests` (compile tests, don't run them). Build tooling deserves the same "try it from clean"
+discipline as code.

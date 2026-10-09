@@ -5,9 +5,10 @@ WORKDIR /src
 COPY pom.xml .
 COPY gateway-simulator/pom.xml gateway-simulator/
 COPY ingestion/pom.xml ingestion/
+COPY state-engine/pom.xml state-engine/
 COPY gateway-simulator/src gateway-simulator/src
 COPY ingestion/src ingestion/src
-RUN mvn -B -q -pl ingestion -am package -Dmaven.test.skip=true
+RUN mvn -B -q -pl ingestion -am package -DskipTests
 
 FROM eclipse-temurin:21-jre
 RUN useradd --system --uid 10001 concord
