@@ -35,7 +35,11 @@ import software.amazon.awssdk.services.dynamodb.model.TransactionCanceledExcepti
  *                                       SK = EVT#&lt;dedupKey&gt;     one item per event (history)
  *                                       SK = OUTBOX#&lt;version&gt;   state changes to deliver (Phase 3)
  * GSI1: gsi1pk = STATE#&lt;state&gt;, gsi1sk = updated_at          -> "payments stuck in PENDING since T"
+ * GSI2: gsi2pk = VERIFY, gsi2sk = updated_at  (sparse)      -> "payments flagged for verification"
  * </pre>
+ *
+ * GSI2 is sparse: the attributes exist only while a payment is flagged, so the index holds only the
+ * handful of flagged payments and costs nothing for the rest.
  *
  * The gateway is part of the key because payment ids are only unique within one gateway. Reading a
  * payment with its whole history is one Query on one partition.
@@ -51,7 +55,21 @@ public final class DynamoDbPaymentStore implements PaymentStore {
     public static final String GSI1 = "gsi1";
     public static final String GSI1_PK = "gsi1pk";
     public static final String GSI1_SK = "gsi1sk";
+    public static final String GSI2 = "gsi2";
+    public static final String GSI2_PK = "gsi2pk";
+    public static final String GSI2_SK = "gsi2sk";
     private static final String STATE_SK = "STATE";
+
+    /**
+     * Index sort keys must sort as text in time order. {@code Instant.toString()} does not: it drops
+     * trailing zeros, so "10:00:00Z" sorts after "10:00:00.5Z". Always 9 fraction digits.
+     */
+    private static final java.time.format.DateTimeFormatter SORTABLE =
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSSSSSSS'Z'").withZone(java.time.ZoneOffset.UTC);
+
+    public static String sortable(Instant t) {
+        return SORTABLE.format(t);
+    }
 
     private final DynamoDbClient dynamo;
     private final String table;
@@ -139,11 +157,24 @@ public final class DynamoDbPaymentStore implements PaymentStore {
     }
 
     @Override
-    public List<PaymentRecord> findInStateSince(CanonicalState state, Instant before, int limit) {
+    public List<PaymentRecord> findInStateBetween(CanonicalState state, Instant from, Instant to, int limit) {
+        if (!to.isAfter(from)) {
+            return List.of();
+        }
+        // BETWEEN is inclusive, hence to - 1ns; fixed-width timestamps sort like the instants they encode.
         QueryRequest request = QueryRequest.builder().tableName(table).indexName(GSI1)
-                .keyConditionExpression(GSI1_PK + " = :s AND " + GSI1_SK + " < :before")
-                .expressionAttributeValues(Map.of(":s", s("STATE#" + state), ":before", s(before.toString())))
+                .keyConditionExpression(GSI1_PK + " = :s AND " + GSI1_SK + " BETWEEN :from AND :to")
+                .expressionAttributeValues(Map.of(":s", s("STATE#" + state), ":from", s(sortable(from)),
+                        ":to", s(sortable(to.minusNanos(1)))))
                 .limit(limit).build();
+        return dynamo.query(request).items().stream().map(DynamoDbPaymentStore::toRecord).toList();
+    }
+
+    @Override
+    public List<PaymentRecord> findFlagged(int limit) {
+        QueryRequest request = QueryRequest.builder().tableName(table).indexName(GSI2)
+                .keyConditionExpression(GSI2_PK + " = :v")
+                .expressionAttributeValues(Map.of(":v", s("VERIFY"))).limit(limit).build();
         return dynamo.query(request).items().stream().map(DynamoDbPaymentStore::toRecord).toList();
     }
 
@@ -171,7 +202,11 @@ public final class DynamoDbPaymentStore implements PaymentStore {
         m.put("created_at", s(r.createdAt().toString()));
         m.put("updated_at", s(r.updatedAt().toString()));
         m.put(GSI1_PK, s("STATE#" + r.state()));
-        m.put(GSI1_SK, s(r.updatedAt().toString()));
+        m.put(GSI1_SK, s(sortable(r.updatedAt())));
+        if (r.needsVerification()) {
+            m.put(GSI2_PK, s("VERIFY"));
+            m.put(GSI2_SK, s(sortable(r.updatedAt())));
+        }
         putIfPresent(m, "amount_minor", r.amountMinor() == null ? null : n(r.amountMinor()));
         putIfPresent(m, "currency", r.currency() == null ? null : s(r.currency()));
         putIfPresent(m, "order_id", r.orderId() == null ? null : s(r.orderId()));
@@ -208,6 +243,7 @@ public final class DynamoDbPaymentStore implements PaymentStore {
         m.put("received_at", s(h.receivedAt().toString()));
         m.put("processed_at", s(h.processedAt().toString()));
         m.put("mapping_id", s(h.mappingId()));
+        m.put("source", s(h.source().name()));
         putIfPresent(m, "claimed_state", h.claimedState() == null ? null : s(h.claimedState().name()));
         putIfPresent(m, "occurred_at", h.occurredAt() == null ? null : s(h.occurredAt().toString()));
         putIfPresent(m, "archive_key", h.archiveKey() == null ? null : s(h.archiveKey()));
@@ -228,25 +264,40 @@ public final class DynamoDbPaymentStore implements PaymentStore {
                 m.containsKey("occurred_at") ? Instant.parse(m.get("occurred_at").s()) : null,
                 Instant.parse(m.get("processed_at").s()),
                 m.get("mapping_id").s(),
-                str(m, "archive_key"));
+                str(m, "archive_key"),
+                dev.concord.engine.mapping.EventSource.valueOf(m.get("source").s()));
     }
 
     private static Map<String, AttributeValue> outboxItem(String pk, OutboxEntry o) {
-        return Map.of(
-                PK, s(pk),
-                SK, s(String.format("OUTBOX#%012d", o.version())),
-                "payment_key", s(o.paymentKey()),
-                "version", n(o.version()),
-                "from_state", s(o.fromState().name()),
-                "to_state", s(o.toState().name()),
-                "idempotency_key", s(o.idempotencyKey()),
-                "created_at", s(o.createdAt().toString()));
+        Map<String, AttributeValue> m = new HashMap<>();
+        m.put(PK, s(pk));
+        m.put(SK, s(String.format("OUTBOX#%012d", o.version())));
+        m.put("gateway", s(o.gateway().name()));
+        m.put("payment_id", s(o.paymentId()));
+        m.put("version", n(o.version()));
+        m.put("kind", s(o.kind().name()));
+        m.put("from_state", s(o.fromState().name()));
+        m.put("to_state", s(o.toState().name()));
+        m.put("idempotency_key", s(o.idempotencyKey()));
+        m.put("created_at", s(o.createdAt().toString()));
+        putIfPresent(m, "order_id", o.orderId() == null ? null : s(o.orderId()));
+        putIfPresent(m, "amount_minor", o.amountMinor() == null ? null : n(o.amountMinor()));
+        putIfPresent(m, "currency", o.currency() == null ? null : s(o.currency()));
+        return m;
     }
 
-    private static OutboxEntry toOutbox(Map<String, AttributeValue> m) {
-        return new OutboxEntry(m.get("payment_key").s(), Long.parseLong(m.get("version").n()),
+    /** Public so the DynamoDB Streams reader (delivery) can turn stream images back into entries. */
+    public static boolean isOutboxItem(Map<String, AttributeValue> m) {
+        return m.containsKey(SK) && m.get(SK).s().startsWith("OUTBOX#");
+    }
+
+    public static OutboxEntry toOutbox(Map<String, AttributeValue> m) {
+        return new OutboxEntry(Gateway.valueOf(m.get("gateway").s()), m.get("payment_id").s(),
+                Long.parseLong(m.get("version").n()), OutboxEntry.Kind.valueOf(m.get("kind").s()),
                 CanonicalState.valueOf(m.get("from_state").s()), CanonicalState.valueOf(m.get("to_state").s()),
-                m.get("idempotency_key").s(), Instant.parse(m.get("created_at").s()));
+                m.get("idempotency_key").s(), str(m, "order_id"),
+                m.containsKey("amount_minor") ? Long.parseLong(m.get("amount_minor").n()) : null,
+                str(m, "currency"), Instant.parse(m.get("created_at").s()));
     }
 
     private static void putIfPresent(Map<String, AttributeValue> m, String k, AttributeValue v) {

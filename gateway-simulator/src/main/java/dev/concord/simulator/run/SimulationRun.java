@@ -1,12 +1,17 @@
 package dev.concord.simulator.run;
 
 import dev.concord.simulator.model.Scenario;
+import dev.concord.simulator.model.SimState;
+import dev.concord.simulator.model.Step;
 import dev.concord.simulator.plan.DeliveryPlan;
+import dev.concord.simulator.plan.PaymentTruth;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.SplittableRandom;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -22,6 +27,9 @@ public final class SimulationRun {
     private final List<Future<?>> scheduled = new ArrayList<>();
     private final AtomicInteger outstanding = new AtomicInteger();
     private final SplittableRandom statusApiRng;
+    /** Timelines changed by merchant actions (capture/void); they replace the planned future. */
+    private final Map<String, PaymentTruth> actedOn = new ConcurrentHashMap<>();
+    private final Map<String, Long> actedAt = new ConcurrentHashMap<>();
 
     private volatile RunStatus status = RunStatus.PLANNED;
     private volatile Instant startedAt;
@@ -53,6 +61,46 @@ public final class SimulationRun {
 
     public String targetUrl() {
         return scenario.targetUrl();
+    }
+
+    /** The true timeline of a payment: the plan, unless a merchant action rewrote its future. */
+    public PaymentTruth truth(String paymentId) {
+        PaymentTruth acted = actedOn.get(paymentId);
+        return acted != null ? acted : plan.payment(paymentId).orElse(null);
+    }
+
+    /** Virtual time of the merchant action on this payment, or null if none. */
+    public Long actedAt(String paymentId) {
+        return actedAt.get(paymentId);
+    }
+
+    /**
+     * A merchant captures or voids an authorized payment. Allowed only while the payment really is
+     * AUTHORIZED; the planned future of the payment is discarded and replaced by {@code target}.
+     *
+     * @throws IllegalStateException with the current state if the payment is not AUTHORIZED
+     */
+    public synchronized PaymentTruth act(String paymentId, SimState target, long virtualNow) {
+        PaymentTruth base = truth(paymentId);
+        SimState current = base.stateAt(virtualNow);
+        if (current != SimState.AUTHORIZED) {
+            throw new IllegalStateException(current.name());
+        }
+        List<Step> steps = new ArrayList<>(base.steps().stream().filter(st -> st.atMs() <= virtualNow).toList());
+        steps.add(new Step(target, virtualNow));
+        PaymentTruth acted = new PaymentTruth(base.paymentId(), base.orderId(), base.amount(), base.currency(), steps);
+        actedOn.put(paymentId, acted);
+        actedAt.put(paymentId, virtualNow);
+        return acted;
+    }
+
+    /** One more webhook to deliver (from a merchant action); reopens a completed run. */
+    synchronized void addDelivery() {
+        outstanding.incrementAndGet();
+        if (status == RunStatus.COMPLETED) {
+            status = RunStatus.RUNNING;
+            finishedAt = null;
+        }
     }
 
     public RunStatus status() {

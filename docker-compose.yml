@@ -1,30 +1,64 @@
-# Local pipeline without AWS: three fake gateways -> Concord (ingestion + state engine, in memory).
+# Whole system locally, no AWS:
+#   3 fake gateways -> Concord (ingestion + engine + resolver + delivery, in memory) -> sample merchant (PostgreSQL)
+#
 #   docker compose up --build
-#   scripts/run-scenario.sh gateway-simulator/scenarios/chaos-1000.json http://localhost:8081
-#   curl localhost:8080/local/stats       # ingestion
-#   curl localhost:8080/local/engine      # state engine
-#   curl localhost:8080/local/payments/a/<paymentId>
+#   then follow "Try it" in README.md (create orders, run a scenario, compare truth, Concord and merchant)
 x-simulator: &simulator
   build:
     context: .
     dockerfile: gateway-simulator/Dockerfile
   image: concord/gateway-simulator:dev
   restart: unless-stopped
-  depends_on: [ingestion]
 
 services:
-  ingestion:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: merchant
+      POSTGRES_PASSWORD: merchant
+      POSTGRES_DB: merchant
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U merchant"]
+      interval: 2s
+      retries: 30
+
+  merchant:
     build:
       context: .
-      dockerfile: state-engine/Dockerfile
-    image: concord/state-engine:dev
+      dockerfile: sample-merchant/Dockerfile
+    image: concord/sample-merchant:dev
+    ports: ["8090:8090"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 8090
+      MERCHANT_DB_URL: jdbc:postgresql://postgres:5432/merchant
+      MERCHANT_DB_USER: merchant
+      MERCHANT_DB_PASSWORD: merchant
+      CONCORD_DELIVERY_SECRET: whsec_concord_dev
+      CONCORD_REGISTER_URL: http://concord:8080/payments/register
+
+  concord:
+    build:
+      context: .
+      dockerfile: local-runner/Dockerfile
+    image: concord/local-runner:dev
     ports: ["8080:8080"]
     environment:
       PORT: 8080
-      CONCORD_BACKEND: memory
       GATEWAY_A_SECRETS: whsec_dev_gateway_a
       GATEWAY_B_SECRETS: whsec_dev_gateway_b
       GATEWAY_C_SECRETS: whsec_dev_gateway_c
+      GATEWAY_A_STATUS_URL: http://gateway-a:8081
+      GATEWAY_A_API_KEY: key_dev_gateway_a
+      GATEWAY_B_STATUS_URL: http://gateway-b:8082
+      GATEWAY_B_API_KEY: key_dev_gateway_b
+      GATEWAY_C_STATUS_URL: http://gateway-c:8083
+      GATEWAY_C_API_KEY: key_dev_gateway_c
+      MERCHANT_URL: http://merchant:8090
+      CONCORD_DELIVERY_SECRET: whsec_concord_dev
+      RESOLVER_PROFILE: demo
 
   gateway-a:
     <<: *simulator
@@ -34,7 +68,7 @@ services:
       SIM_GATEWAY: A
       SIM_WEBHOOK_SECRET: whsec_dev_gateway_a
       SIM_API_KEY: key_dev_gateway_a
-      SIM_TARGET_URL: http://ingestion:8080/webhooks/a
+      SIM_TARGET_URL: http://concord:8080/webhooks/a
 
   gateway-b:
     <<: *simulator
@@ -44,7 +78,7 @@ services:
       SIM_GATEWAY: B
       SIM_WEBHOOK_SECRET: whsec_dev_gateway_b
       SIM_API_KEY: key_dev_gateway_b
-      SIM_TARGET_URL: http://ingestion:8080/webhooks/b
+      SIM_TARGET_URL: http://concord:8080/webhooks/b
 
   gateway-c:
     <<: *simulator
@@ -54,4 +88,4 @@ services:
       SIM_GATEWAY: C
       SIM_WEBHOOK_SECRET: whsec_dev_gateway_c
       SIM_API_KEY: key_dev_gateway_c
-      SIM_TARGET_URL: http://ingestion:8080/webhooks/c
+      SIM_TARGET_URL: http://concord:8080/webhooks/c

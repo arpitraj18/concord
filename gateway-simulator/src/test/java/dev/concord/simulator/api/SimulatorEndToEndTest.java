@@ -117,6 +117,32 @@ class SimulatorEndToEndTest {
     }
 
     @Test
+    void merchantCanCaptureOrVoidAnAuthorizedPaymentAndPlannedFutureIsDropped() throws Exception {
+        Map<String, Object> scenario = Map.of(
+                "seed", 21, "targetUrl", receiver.url(), "timeScale", 10,
+                "payments", List.of(
+                        Map.of("paymentId", "pay_cap", "steps", List.of(Map.of("state", "AUTHORIZED", "atMs", 0))),
+                        Map.of("paymentId", "pay_void", "steps", List.of(Map.of("state", "AUTHORIZED", "atMs", 0),
+                                Map.of("state", "CAPTURED", "atMs", 30000)))));
+        String runId = startRun(scenario);
+        Thread.sleep(200);
+
+        assertThat(rest.postForEntity("/v1/payments/pay_cap/capture", null, String.class).getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(status("pay_cap").get("status").asText()).isEqualTo("captured");
+        assertThat(rest.postForEntity("/v1/payments/pay_cap/capture", null, String.class).getStatusCode())
+                .as("already captured").isEqualTo(HttpStatus.CONFLICT);
+
+        assertThat(rest.postForEntity("/v1/payments/pay_void/void", null, String.class).getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(status("pay_void").get("status").asText()).isEqualTo("failed");
+
+        awaitCompleted(runId);
+        Thread.sleep(3500); // past the planned capture of pay_void at 30 s virtual (3 s real)
+        assertThat(receiver.received()).extracting(r -> readTree(r.body()).get("event").asText())
+                .containsExactlyInAnyOrder("payment.authorized", "payment.authorized", "payment.captured", "payment.failed");
+        assertThat(status("pay_void").get("status").asText()).as("planned capture never happens").isEqualTo("failed");
+    }
+
+    @Test
     void statusApiOutageReturns503() {
         Map<String, Object> scenario = Map.of(
                 "seed", 5,

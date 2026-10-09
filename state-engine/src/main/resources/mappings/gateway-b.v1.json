@@ -3,15 +3,85 @@
   "version": 1,
   "eventType": "/type",
   "rules": [
-    { "eventType": "PAYMENT_PENDING_WEBHOOK", "state": "PENDING" },
-    { "eventType": "PAYMENT_SUCCESS_WEBHOOK", "state": "CAPTURED" },
-    { "eventType": "PAYMENT_FAILED_WEBHOOK", "state": "FAILED" },
-    { "eventType": "REFUND_STATUS_WEBHOOK", "when": { "pointer": "/data/refund/refund_status", "equals": "SUCCESS" }, "state": "REFUNDED" }
+    {
+      "eventType": "PAYMENT_PENDING_WEBHOOK",
+      "state": "PENDING"
+    },
+    {
+      "eventType": "PAYMENT_SUCCESS_WEBHOOK",
+      "state": "CAPTURED"
+    },
+    {
+      "eventType": "PAYMENT_FAILED_WEBHOOK",
+      "state": "FAILED"
+    },
+    {
+      "eventType": "REFUND_STATUS_WEBHOOK",
+      "when": [
+        {
+          "pointer": "/data/refund/refund_status",
+          "equals": "SUCCESS"
+        }
+      ],
+      "state": "REFUNDED"
+    }
   ],
   "fields": {
-    "amount": { "pointers": ["/data/payment/payment_amount", "/data/refund/refund_amount"], "unit": "MAJOR" },
-    "currency": { "pointers": ["/data/payment/payment_currency", "/data/refund/refund_currency"] },
-    "orderId": { "pointers": ["/data/order/order_id", "/data/refund/order_id"] },
-    "occurredAt": { "pointers": ["/event_time"], "format": "ISO_INSTANT" }
+    "amount": {
+      "pointers": [
+        "/data/payment/payment_amount",
+        "/data/refund/refund_amount"
+      ],
+      "unit": "MAJOR"
+    },
+    "currency": {
+      "pointers": [
+        "/data/payment/payment_currency",
+        "/data/refund/refund_currency"
+      ]
+    },
+    "orderId": {
+      "pointers": [
+        "/data/order/order_id",
+        "/data/refund/order_id"
+      ]
+    },
+    "occurredAt": {
+      "pointers": [
+        "/event_time"
+      ],
+      "format": "ISO_INSTANT"
+    }
+  },
+  "status": {
+    "field": "/payment_status",
+    "rules": [
+      {
+        "value": "SUCCESS",
+        "when": [
+          {
+            "pointer": "/refund_status",
+            "equals": "SUCCESS"
+          }
+        ],
+        "state": "REFUNDED"
+      },
+      {
+        "value": "SUCCESS",
+        "state": "CAPTURED"
+      },
+      {
+        "value": "PENDING",
+        "state": "PENDING"
+      },
+      {
+        "value": "FAILED",
+        "state": "FAILED"
+      },
+      {
+        "value": "NOT_ATTEMPTED",
+        "state": "CREATED"
+      }
+    ]
   }
 }

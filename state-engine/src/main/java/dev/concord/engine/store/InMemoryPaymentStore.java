@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 
 /** Same contract as the DynamoDB store, for fast tests and local runs. One lock per payment. */
 public final class InMemoryPaymentStore implements PaymentStore {
@@ -22,6 +24,15 @@ public final class InMemoryPaymentStore implements PaymentStore {
     }
 
     private final ConcurrentHashMap<String, Partition> partitions = new ConcurrentHashMap<>();
+    private final List<Consumer<OutboxEntry>> outboxListeners = new CopyOnWriteArrayList<>();
+
+    /**
+     * Called for every committed outbox entry, inside the payment's lock, so entries of one payment
+     * arrive in version order. Plays the role DynamoDB Streams plays in AWS.
+     */
+    public void onOutbox(Consumer<OutboxEntry> listener) {
+        outboxListeners.add(listener);
+    }
 
     private Partition partition(String key) {
         return partitions.computeIfAbsent(key, k -> new Partition());
@@ -55,7 +66,10 @@ public final class InMemoryPaymentStore implements PaymentStore {
             }
             commit.newRecord().ifPresent(r -> p.record = r);
             p.history.put(commit.history().dedupKey(), commit.history());
-            commit.outbox().ifPresent(p.outbox::add);
+            commit.outbox().ifPresent(o -> {
+                p.outbox.add(o);
+                outboxListeners.forEach(l -> l.accept(o));
+            });
         }
     }
 
@@ -84,12 +98,18 @@ public final class InMemoryPaymentStore implements PaymentStore {
     }
 
     @Override
-    public List<PaymentRecord> findInStateSince(CanonicalState state, Instant before, int limit) {
+    public List<PaymentRecord> findInStateBetween(CanonicalState state, Instant from, Instant to, int limit) {
         return all().stream()
-                .filter(r -> r.state() == state && r.updatedAt().isBefore(before))
+                .filter(r -> r.state() == state && !r.updatedAt().isBefore(from) && r.updatedAt().isBefore(to))
                 .sorted(Comparator.comparing(PaymentRecord::updatedAt))
                 .limit(limit)
                 .toList();
+    }
+
+    @Override
+    public List<PaymentRecord> findFlagged(int limit) {
+        return all().stream().filter(PaymentRecord::needsVerification)
+                .sorted(Comparator.comparing(PaymentRecord::updatedAt)).limit(limit).toList();
     }
 
     @Override

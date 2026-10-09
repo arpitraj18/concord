@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>dev.concord</groupId>
+        <artifactId>concord-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>system-tests</artifactId>
+    <name>Concord system tests</name>
+    <description>The whole system, end to end, against the hostile simulator</description>
+
+    <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.zonky.test.postgres</groupId>
+                <artifactId>embedded-postgres-binaries-bom</artifactId>
+                <version>${embedded-postgres-binaries.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency><groupId>dev.concord</groupId><artifactId>resolver</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>dev.concord</groupId><artifactId>delivery</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>dev.concord</groupId><artifactId>state-engine</artifactId><version>${project.version}</version><type>test-jar</type><scope>test</scope></dependency>
+        <dependency><groupId>dev.concord</groupId><artifactId>ingestion</artifactId><version>${project.version}</version><type>test-jar</type><scope>test</scope></dependency>
+        <dependency>
+            <groupId>dev.concord</groupId><artifactId>gateway-simulator</artifactId><version>${project.version}</version><scope>test</scope>
+            <exclusions><exclusion><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-logging</artifactId></exclusion></exclusions>
+        </dependency>
+        <dependency>
+            <groupId>dev.concord</groupId><artifactId>sample-merchant</artifactId><version>${project.version}</version><scope>test</scope>
+            <exclusions><exclusion><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-logging</artifactId></exclusion></exclusions>
+        </dependency>
+        <dependency><groupId>dev.concord</groupId><artifactId>sample-merchant</artifactId><version>${project.version}</version><type>test-jar</type><scope>test</scope></dependency>
+        <dependency><groupId>io.zonky.test</groupId><artifactId>embedded-postgres</artifactId><version>${embedded-postgres.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>com.amazonaws</groupId><artifactId>DynamoDBLocal</artifactId><version>${dynamodb-local.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+        <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><scope>test</scope></dependency>
+    </dependencies>
+</project>

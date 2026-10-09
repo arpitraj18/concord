@@ -3,16 +3,84 @@
   "version": 1,
   "eventType": "/event",
   "rules": [
-    { "eventType": "payment.authorized", "state": "AUTHORIZED" },
-    { "eventType": "payment.captured", "state": "CAPTURED" },
-    { "eventType": "payment.failed", "state": "FAILED" },
-    { "eventType": "settlement.processed", "state": "SETTLED" },
-    { "eventType": "refund.processed", "state": "REFUNDED" }
+    {
+      "eventType": "payment.authorized",
+      "state": "AUTHORIZED"
+    },
+    {
+      "eventType": "payment.captured",
+      "state": "CAPTURED"
+    },
+    {
+      "eventType": "payment.failed",
+      "state": "FAILED"
+    },
+    {
+      "eventType": "settlement.processed",
+      "state": "SETTLED"
+    },
+    {
+      "eventType": "refund.processed",
+      "state": "REFUNDED"
+    }
   ],
   "fields": {
-    "amount": { "pointers": ["/payload/payment/entity/amount"], "unit": "MINOR" },
-    "currency": { "pointers": ["/payload/payment/entity/currency"] },
-    "orderId": { "pointers": ["/payload/payment/entity/order_id"] },
-    "occurredAt": { "pointers": ["/created_at"], "format": "EPOCH_SECONDS" }
+    "amount": {
+      "pointers": [
+        "/payload/payment/entity/amount"
+      ],
+      "unit": "MINOR"
+    },
+    "currency": {
+      "pointers": [
+        "/payload/payment/entity/currency"
+      ]
+    },
+    "orderId": {
+      "pointers": [
+        "/payload/payment/entity/order_id"
+      ]
+    },
+    "occurredAt": {
+      "pointers": [
+        "/created_at"
+      ],
+      "format": "EPOCH_SECONDS"
+    }
+  },
+  "status": {
+    "field": "/status",
+    "rules": [
+      {
+        "value": "captured",
+        "when": [
+          {
+            "pointer": "/settled",
+            "equals": "true"
+          }
+        ],
+        "state": "SETTLED"
+      },
+      {
+        "value": "captured",
+        "state": "CAPTURED"
+      },
+      {
+        "value": "authorized",
+        "state": "AUTHORIZED"
+      },
+      {
+        "value": "created",
+        "state": "CREATED"
+      },
+      {
+        "value": "failed",
+        "state": "FAILED"
+      },
+      {
+        "value": "refunded",
+        "state": "REFUNDED"
+      }
+    ]
   }
 }

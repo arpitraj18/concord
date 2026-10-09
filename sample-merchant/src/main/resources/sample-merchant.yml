@@ -1,0 +1,18 @@
+server:
+  port: ${PORT:8090}
+
+spring:
+  application:
+    name: sample-merchant
+  datasource:
+    url: ${MERCHANT_DB_URL:jdbc:postgresql://localhost:5432/merchant}
+    username: ${MERCHANT_DB_USER:merchant}
+    password: ${MERCHANT_DB_PASSWORD:merchant}
+  sql:
+    init:
+      mode: always
+
+merchant:
+  concord-secret: ${CONCORD_DELIVERY_SECRET:whsec_concord_dev}
+  signature-tolerance-seconds: 300
+  concord-register-url: ${CONCORD_REGISTER_URL:}

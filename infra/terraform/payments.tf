@@ -1,6 +1,8 @@
 # ---------- Payment state store (DynamoDB, single table) ----------
 # PK = PAY#<gateway>#<paymentId>; SK = STATE | EVT#<dedupKey> | OUTBOX#<version>
 # GSI1 (gsi1pk = STATE#<state>, gsi1sk = updated_at) finds payments stuck in a state.
+# GSI2 (sparse: gsi2pk = VERIFY | PARKED) holds only payments needing attention.
+# Index sort keys are fixed-width timestamps (9 fraction digits) so text order = time order.
 # The stream carries OUTBOX items to the Phase 3 delivery worker (change data capture).
 
 resource "aws_dynamodb_table" "payments" {
@@ -29,6 +31,23 @@ resource "aws_dynamodb_table" "payments" {
     type = "S"
   }
 
+  attribute {
+    name = "gsi2pk"
+    type = "S"
+  }
+
+  attribute {
+    name = "gsi2sk"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "gsi2"
+    hash_key        = "gsi2pk"
+    range_key       = "gsi2sk"
+    projection_type = "ALL"
+  }
+
   global_secondary_index {
     name            = "gsi1"
     hash_key        = "gsi1pk"
@@ -52,7 +71,7 @@ data "aws_iam_policy_document" "state_worker" {
   }
   statement {
     actions   = ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:PutItem", "dynamodb:ConditionCheckItem"]
-    resources = [aws_dynamodb_table.payments.arn, "${aws_dynamodb_table.payments.arn}/index/gsi1"]
+    resources = [aws_dynamodb_table.payments.arn, "${aws_dynamodb_table.payments.arn}/index/*"]
   }
 }
 

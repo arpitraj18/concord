@@ -22,6 +22,11 @@
         <module>gateway-simulator</module>
         <module>ingestion</module>
         <module>state-engine</module>
+        <module>resolver</module>
+        <module>delivery</module>
+        <module>sample-merchant</module>
+        <module>local-runner</module>
+        <module>system-tests</module>
     </modules>
 
     <properties>
@@ -33,6 +38,9 @@
         <dynamodb-local.version>2.6.1</dynamodb-local.version>
         <elasticmq.version>1.7.1</elasticmq.version>
         <testcontainers.version>1.21.4</testcontainers.version>
+        <resilience4j.version>2.3.0</resilience4j.version>
+        <embedded-postgres.version>2.2.2</embedded-postgres.version>
+        <embedded-postgres-binaries.version>17.6.0</embedded-postgres-binaries.version>
     </properties>
 
     <dependencyManagement>

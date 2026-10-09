@@ -53,6 +53,7 @@ public abstract class PaymentStoreContract {
         assertThat(store().history(Gateway.A, id)).extracting(HistoryEntry::dedupKey).containsExactly("A#e1", "A#e2");
         assertThat(store().history(Gateway.A, id).getFirst().path()).containsExactly(CanonicalState.CREATED, PENDING, AUTHORIZED);
         assertThat(store().outbox(Gateway.A, id)).extracting(OutboxEntry::toState).containsExactly(AUTHORIZED, CAPTURED);
+        assertThat(store().outbox(Gateway.A, id).getLast().amountMinor()).isEqualTo(49_900L);
     }
 
     @Test
@@ -106,6 +107,76 @@ public abstract class PaymentStoreContract {
         Instant later = Instant.now().plusSeconds(60);
         assertThat(store().findInStateSince(PENDING, later, 1000)).extracting(PaymentRecord::paymentId).contains(id);
         assertThat(store().findInStateSince(PENDING, Instant.EPOCH, 1000)).isEmpty();
+    }
+
+    @Test
+    void timeWindowQueriesRespectSubSecondOrder() {
+        // Instant.toString() drops trailing zeros: "…:00Z" would sort after "…:00.5Z" as text.
+        java.time.Instant second = java.time.Instant.parse("2030-01-01T10:00:00Z");
+        String a = pid("win_whole");
+        String b = pid("win_half");
+        new StateEngine(Normalizer.withBundledMappings(new ObjectMapper()), store(), java.time.Clock.fixed(second, java.time.ZoneOffset.UTC))
+                .process(Events.claim(a, SETTLED, "A#w1", 1));
+        new StateEngine(Normalizer.withBundledMappings(new ObjectMapper()), store(),
+                java.time.Clock.fixed(second.plusMillis(500), java.time.ZoneOffset.UTC)).process(Events.claim(b, SETTLED, "A#w2", 2));
+
+        assertThat(store().findInStateBetween(SETTLED, second, second.plusMillis(250), 1000))
+                .extracting(PaymentRecord::paymentId).containsExactly(a);
+        assertThat(store().findInStateBetween(SETTLED, second.plusMillis(250), second.plusSeconds(1), 1000))
+                .extracting(PaymentRecord::paymentId).containsExactly(b);
+        assertThat(store().findInStateBetween(SETTLED, second, second, 1000)).isEmpty();
+    }
+
+    @Test
+    void registrationMakesAPaymentKnownBeforeAnyWebhook() {
+        String id = pid("reg");
+        StateEngine engine = engine();
+        assertThat(engine.register(Gateway.A, id, "order_9", 12_300L, "INR").outcome()).isEqualTo(EventOutcome.REGISTERED);
+        assertThat(engine.register(Gateway.A, id, "order_9", 12_300L, "INR").outcome()).as("idempotent").isEqualTo(EventOutcome.SAME);
+        PaymentRecord rec = store().find(Gateway.A, id).orElseThrow();
+        assertThat(rec.state()).isEqualTo(CanonicalState.CREATED);
+        assertThat(rec.orderId()).isEqualTo("order_9");
+        assertThat(store().findInStateSince(CanonicalState.CREATED, Instant.now().plusSeconds(5), 1000))
+                .extracting(PaymentRecord::paymentId).contains(id);
+        engine.process(Events.claim(id, CAPTURED, "A#c1", 1));
+        assertThat(store().find(Gateway.A, id).orElseThrow().state()).isEqualTo(CAPTURED);
+    }
+
+    @Test
+    void flaggedPaymentsAreFoundAndVerificationClearsTheFlag() {
+        String id = pid("verify");
+        StateEngine engine = engine();
+        engine.process(Events.claim(id, CAPTURED, "A#v1", 1));
+        engine.process(Events.claim(id, FAILED, "A#v2", 2));
+        assertThat(store().findFlagged(1000)).extracting(PaymentRecord::paymentId).contains(id);
+
+        assertThat(engine.verify(Gateway.A, id, CAPTURED, "status api: captured").outcome()).isEqualTo(EventOutcome.VERIFIED);
+        PaymentRecord rec = store().find(Gateway.A, id).orElseThrow();
+        assertThat(rec.needsVerification()).isFalse();
+        assertThat(store().findFlagged(1000)).extracting(PaymentRecord::paymentId).doesNotContain(id);
+    }
+
+    @Test
+    void correctionMovesToTheTruthAuditsItAndTellsTheMerchant() {
+        String id = pid("correct");
+        StateEngine engine = engine();
+        engine.process(Events.claim(id, AUTHORIZED, "A#k1", 1));
+        engine.process(Events.claim(id, CAPTURED, "A#k2", 2)); // a lie that fits a legal path
+        long version = store().find(Gateway.A, id).orElseThrow().version();
+
+        assertThat(engine.correct(Gateway.A, id, AUTHORIZED, version - 1, "stale decision").outcome())
+                .as("refused when the payment changed since the resolver looked").isNull();
+        assertThat(engine.correct(Gateway.A, id, AUTHORIZED, version, "status api: authorized x2").outcome())
+                .isEqualTo(EventOutcome.CORRECTED);
+
+        PaymentRecord rec = store().find(Gateway.A, id).orElseThrow();
+        assertThat(rec.state()).isEqualTo(AUTHORIZED);
+        OutboxEntry last = store().outbox(Gateway.A, id).getLast();
+        assertThat(last.kind()).isEqualTo(OutboxEntry.Kind.CORRECTION);
+        assertThat(last.fromState()).isEqualTo(CAPTURED);
+        assertThat(last.toState()).isEqualTo(AUTHORIZED);
+        assertThat(last.orderId()).isEqualTo("order_1");
+        assertThat(store().history(Gateway.A, id)).extracting(HistoryEntry::outcome).contains(EventOutcome.CORRECTED);
     }
 
     @Test

@@ -9,6 +9,7 @@ import software.amazon.awssdk.services.dynamodb.model.KeyType;
 import software.amazon.awssdk.services.dynamodb.model.Projection;
 import software.amazon.awssdk.services.dynamodb.model.ProjectionType;
 import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
+import software.amazon.awssdk.services.dynamodb.model.StreamViewType;
 
 /** Same schema as infra/terraform/payments.tf. */
 public final class PaymentsTable {
@@ -22,12 +23,19 @@ public final class PaymentsTable {
                 .billingMode(BillingMode.PAY_PER_REQUEST)
                 .keySchema(key(DynamoDbPaymentStore.PK, KeyType.HASH), key(DynamoDbPaymentStore.SK, KeyType.RANGE))
                 .attributeDefinitions(attr(DynamoDbPaymentStore.PK), attr(DynamoDbPaymentStore.SK),
-                        attr(DynamoDbPaymentStore.GSI1_PK), attr(DynamoDbPaymentStore.GSI1_SK))
-                .globalSecondaryIndexes(GlobalSecondaryIndex.builder()
-                        .indexName(DynamoDbPaymentStore.GSI1)
-                        .keySchema(key(DynamoDbPaymentStore.GSI1_PK, KeyType.HASH), key(DynamoDbPaymentStore.GSI1_SK, KeyType.RANGE))
-                        .projection(Projection.builder().projectionType(ProjectionType.ALL).build())
-                        .build()));
+                        attr(DynamoDbPaymentStore.GSI1_PK), attr(DynamoDbPaymentStore.GSI1_SK),
+                        attr(DynamoDbPaymentStore.GSI2_PK), attr(DynamoDbPaymentStore.GSI2_SK))
+                .globalSecondaryIndexes(
+                        index(DynamoDbPaymentStore.GSI1, DynamoDbPaymentStore.GSI1_PK, DynamoDbPaymentStore.GSI1_SK),
+                        index(DynamoDbPaymentStore.GSI2, DynamoDbPaymentStore.GSI2_PK, DynamoDbPaymentStore.GSI2_SK))
+                .streamSpecification(b2 -> b2.streamEnabled(true).streamViewType(StreamViewType.NEW_IMAGE)));
+    }
+
+    private static GlobalSecondaryIndex index(String name, String pk, String sk) {
+        return GlobalSecondaryIndex.builder().indexName(name)
+                .keySchema(key(pk, KeyType.HASH), key(sk, KeyType.RANGE))
+                .projection(Projection.builder().projectionType(ProjectionType.ALL).build())
+                .build();
     }
 
     private static KeySchemaElement key(String name, KeyType type) {

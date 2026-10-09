@@ -25,7 +25,15 @@ public interface PaymentStore {
     List<OutboxEntry> outbox(Gateway gateway, String paymentId);
 
     /** Payments in {@code state} not updated since {@code before}: the resolver's work list (Phase 3). */
-    List<PaymentRecord> findInStateSince(CanonicalState state, Instant before, int limit);
+    default List<PaymentRecord> findInStateSince(CanonicalState state, Instant before, int limit) {
+        return findInStateBetween(state, Instant.EPOCH, before, limit);
+    }
+
+    /** Payments in {@code state} last updated in [from, to), oldest first. */
+    List<PaymentRecord> findInStateBetween(CanonicalState state, Instant from, Instant to, int limit);
+
+    /** Payments flagged for verification (a sparse index: only flagged payments are in it). */
+    List<PaymentRecord> findFlagged(int limit);
 
     /** Every payment record; used to compare a replay with live state. */
     List<PaymentRecord> all();

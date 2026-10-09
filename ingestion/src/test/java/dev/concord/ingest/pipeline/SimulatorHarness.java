@@ -35,6 +35,10 @@ public final class SimulatorHarness implements AutoCloseable {
         baseUrl = "http://127.0.0.1:" + app.getEnvironment().getProperty("local.server.port");
     }
 
+    public String baseUrl() {
+        return baseUrl;
+    }
+
     public String startRun(Map<String, Object> scenario) throws Exception {
         HttpResponse<String> r = http.send(HttpRequest.newBuilder(URI.create(baseUrl + "/sim/runs"))
                 .header("Content-Type", "application/json")
@@ -44,6 +48,18 @@ public final class SimulatorHarness implements AutoCloseable {
             throw new IllegalStateException("simulator refused scenario: " + r.body());
         }
         return JSON.readTree(r.body()).get("runId").asText();
+    }
+
+    /** Dry run: the plan the same scenario would produce, without sending anything. */
+    public JsonNode plan(Map<String, Object> scenario) throws Exception {
+        HttpResponse<String> r = http.send(HttpRequest.newBuilder(URI.create(baseUrl + "/sim/plan"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(scenario))).build(),
+                HttpResponse.BodyHandlers.ofString());
+        if (r.statusCode() != 200) {
+            throw new IllegalStateException("simulator refused scenario: " + r.body());
+        }
+        return JSON.readTree(r.body());
     }
 
     public JsonNode get(String path) throws Exception {

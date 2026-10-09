@@ -78,3 +78,67 @@ resolves test-scoped dependencies before running a skipped plugin. A clean build
 **Lesson / change:** caught by simulating the Docker build from an empty local repository. Use
 `-DskipTests` (compile tests, don't run them). Build tooling deserves the same "try it from clean"
 discipline as code.
+
+## 2026-10-10 — Payments parked before they could be marked UNKNOWN or captured
+
+**Phase:** 3 (resolver tests)
+
+**What happened:** with "park after 6 attempts" and a 10 s base backoff, an unreachable PENDING payment
+was handed to a human before the 10-minute UNKNOWN deadline, and a long-AUTHORIZED payment was parked
+before the 30-minute capture/release decision.
+
+**Why:** with exponential backoff, an attempt count is really a give-up *time* nobody chose. "Still
+authorized" confirmations also counted as attempts.
+
+**Change:** parking is a time budget (`parkAfter`), and the config refuses one shorter than the
+UNKNOWN or capture thresholds. Attempts only drive the backoff.
+
+## 2026-10-10 — Backoff jitter delayed telling the merchant "uncertain"
+
+**Phase:** 3 (flaky test, 2 failures in 5 runs)
+
+**What happened:** a test expecting UNKNOWN after 13 minutes sometimes still saw PENDING.
+
+**Why:** retries are jittered up to 5 minutes, so the first check after the 10-minute deadline could
+come much later. Not just a test problem: the merchant should hear "do not cancel" on time.
+
+**Change:** a PENDING payment's next check is never scheduled past its UNKNOWN deadline. Lesson: run a
+new test several times before trusting it; jitter makes failures intermittent.
+
+## 2026-10-10 — Time-window queries were wrong within the same second (latent since Phase 2)
+
+**Phase:** 3 (found while adding `BETWEEN` queries)
+
+**What happened:** GSI sort keys were `Instant.toString()`, which drops trailing zeros:
+`10:00:00Z` sorts *after* `10:00:00.500Z` as text. "Stuck since T" queries could miss or include the
+wrong payments around every second boundary.
+
+**Change:** index sort keys use a fixed-width format (9 fraction digits). A contract test with two
+payments 500 ms apart across a whole second now runs on DynamoDB Local. Lesson: an index sorts bytes,
+not meaning.
+
+## 2026-10-10 — The system test passed without ever testing the merchant's dedup
+
+**Phase:** 3
+
+**What happened:** the first green run reported `duplicatesAbsorbed=0`: no duplicate ever reached the
+merchant, so "zero duplicate effects" proved nothing about its deduplication.
+
+**Change:** after convergence, the test simulates a delivery-worker crash and restart (the stream is
+re-read from the start). The merchant now receives every event twice and its effects do not change.
+Lesson: check that a test's hostile condition actually happened.
+
+## 2026-10-10 — Two Spring Boot apps on one classpath took each other's config
+
+**Phase:** 3 (system tests)
+
+**What happened:** with the simulator and the merchant in one JVM, the merchant failed to start
+("could not resolve merchant.signature-tolerance-seconds"), then the simulator failed ("no suitable
+JDBC driver").
+
+**Why:** both shipped `application.yml`; Spring loads the first one on the classpath, so the merchant
+silently got the simulator's settings. And the merchant's JDBC starter made the simulator try to
+configure a database.
+
+**Change:** the merchant uses its own config name (`sample-merchant.yml`); the simulator explicitly
+excludes database auto-configuration.

@@ -1,6 +1,7 @@
 package dev.concord.engine.store;
 
 import dev.concord.engine.machine.CanonicalState;
+import dev.concord.engine.mapping.EventSource;
 import java.time.Instant;
 import java.util.List;
 
@@ -24,7 +25,8 @@ public record HistoryEntry(
         Instant occurredAt,
         Instant processedAt,
         String mappingId,
-        String archiveKey) {
+        String archiveKey,
+        EventSource source) {
 
     public HistoryEntry {
         path = path == null ? List.of() : List.copyOf(path);

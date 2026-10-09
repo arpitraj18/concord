@@ -75,7 +75,8 @@ public final class Normalizer {
                 f == null ? null : instant(body, f.occurredAt()),
                 Instant.parse(event.receivedAt()),
                 mapping.id(),
-                event.archiveKey());
+                event.archiveKey(),
+                EventSource.WEBHOOK);
     }
 
     static CanonicalState claimedState(GatewayMapping mapping, JsonNode body) {
@@ -84,11 +85,40 @@ public final class Normalizer {
             if (!rule.eventType().equals(type)) {
                 continue;
             }
-            if (rule.when() == null || rule.when().equals().equals(body.at(rule.when().pointer()).asText(null))) {
+            if (GatewayMapping.allMatch(rule.when(), body)) {
                 return rule.state();
             }
         }
         return null;
+    }
+
+    /**
+     * Reads a status API response with the gateway's mapping.
+     *
+     * @return the canonical state, or empty if no rule matches (an unexpected status: never guess)
+     */
+    public java.util.Optional<CanonicalState> statusState(Gateway gateway, JsonNode response) {
+        GatewayMapping mapping = mappings.get(gateway);
+        if (mapping == null || mapping.status() == null) {
+            return java.util.Optional.empty();
+        }
+        String value = response.at(mapping.status().field()).asText(null);
+        for (GatewayMapping.StatusRule rule : mapping.status().rules()) {
+            if (rule.value().equals(value) && GatewayMapping.allMatch(rule.when(), response)) {
+                return java.util.Optional.of(rule.state());
+            }
+        }
+        return java.util.Optional.empty();
+    }
+
+    /** States this gateway's status API can report, e.g. to know whether to wait for SETTLED. */
+    public java.util.Set<CanonicalState> statusStates(Gateway gateway) {
+        GatewayMapping mapping = mappings.get(gateway);
+        java.util.Set<CanonicalState> out = java.util.EnumSet.noneOf(CanonicalState.class);
+        if (mapping != null && mapping.status() != null) {
+            mapping.status().rules().forEach(r -> out.add(r.state()));
+        }
+        return out;
     }
 
     private static JsonNode first(JsonNode body, GatewayMapping.Field field) {

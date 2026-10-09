@@ -82,7 +82,7 @@ public class ControlController {
     public List<Map<String, Object>> truth(@PathVariable String runId) {
         SimulationRun run = find(runId);
         long now = run.virtualElapsedMs(clock.instant());
-        return run.plan().payments().stream().map(p -> truthRow(p, now)).toList();
+        return run.plan().payments().stream().map(p -> truthRow(run.truth(p.paymentId()), now)).toList();
     }
 
     private static Map<String, Object> truthRow(PaymentTruth p, long now) {

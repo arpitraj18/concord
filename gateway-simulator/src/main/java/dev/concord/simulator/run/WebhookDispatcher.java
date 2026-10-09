@@ -66,8 +66,25 @@ public class WebhookDispatcher {
                 realDelayMs, TimeUnit.MILLISECONDS));
     }
 
+    /** Sends the webhook for a merchant action right away (no injected faults; retries still apply). */
+    public void sendNow(SimulationRun run, PaymentTruth payment, dev.concord.simulator.model.SimState state, long virtualNow) {
+        String eventId = "evt_act_" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+        PlannedDelivery d = new PlannedDelivery(-actionSeq.incrementAndGet(), payment.paymentId(), state,
+                dialect.eventType(state), eventId, PlannedDelivery.Kind.ORIGINAL, false, virtualNow, virtualNow, "merchant-action");
+        run.addDelivery();
+        schedule(run, payment, d, 1, 0);
+    }
+
+    private final java.util.concurrent.atomic.AtomicInteger actionSeq = new java.util.concurrent.atomic.AtomicInteger();
+
     private void attempt(SimulationRun run, PaymentTruth payment, PlannedDelivery d, int attempt) {
         if (!run.isActive()) {
+            return;
+        }
+        Long actedAt = run.actedAt(d.paymentId());
+        if (actedAt != null && d.seq() >= 0 && d.happenedAtMs() > actedAt && d.kind() != PlannedDelivery.Kind.CONTRADICTION) {
+            // A merchant action rewrote this payment's future: the planned step no longer happens.
+            run.deliveryFinished(clock.instant());
             return;
         }
         Instant sentAt = clock.instant();

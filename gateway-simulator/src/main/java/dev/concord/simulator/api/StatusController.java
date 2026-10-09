@@ -2,6 +2,8 @@ package dev.concord.simulator.api;
 
 import dev.concord.simulator.config.SimulatorProperties;
 import dev.concord.simulator.dialect.GatewayDialect;
+import dev.concord.simulator.model.SimState;
+import dev.concord.simulator.run.WebhookDispatcher;
 import dev.concord.simulator.model.StatusApiFaults;
 import dev.concord.simulator.plan.PaymentTruth;
 import dev.concord.simulator.run.RunRegistry;
@@ -12,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -26,12 +29,15 @@ public class StatusController {
     private final GatewayDialect dialect;
     private final SimulatorProperties props;
     private final Clock clock;
+    private final WebhookDispatcher dispatcher;
 
-    public StatusController(RunRegistry registry, GatewayDialect dialect, SimulatorProperties props, Clock clock) {
+    public StatusController(RunRegistry registry, GatewayDialect dialect, SimulatorProperties props, Clock clock,
+                            WebhookDispatcher dispatcher) {
         this.registry = registry;
         this.dialect = dialect;
         this.props = props;
         this.clock = clock;
+        this.dispatcher = dispatcher;
     }
 
     @GetMapping("/v1/payments/{paymentId}")
@@ -57,8 +63,42 @@ public class StatusController {
                     .header("Retry-After", "1")
                     .body(Map.of("error", "status api unavailable"));
         }
-        PaymentTruth payment = run.plan().payment(paymentId).orElseThrow();
+        PaymentTruth payment = run.truth(paymentId);
         return ResponseEntity.ok(dialect.statusBody(payment, payment.stateAt(now), run.startedAt()));
+    }
+
+    /** Merchant captures an authorized payment (save the sale). 409 if it is not AUTHORIZED. */
+    @PostMapping("/v1/payments/{paymentId}/capture")
+    public ResponseEntity<Map<String, Object>> capture(@PathVariable String paymentId,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        return act(paymentId, SimState.CAPTURED, authorization);
+    }
+
+    /** Merchant voids an authorized payment (release the money now instead of days later). */
+    @PostMapping("/v1/payments/{paymentId}/void")
+    public ResponseEntity<Map<String, Object>> voidPayment(@PathVariable String paymentId,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        return act(paymentId, SimState.FAILED, authorization);
+    }
+
+    private ResponseEntity<Map<String, Object>> act(String paymentId, SimState target, String authorization) {
+        if (props.apiKey() != null && !props.apiKey().isBlank()
+                && !("Bearer " + props.apiKey()).equals(authorization)) {
+            return error(HttpStatus.UNAUTHORIZED, "invalid api key");
+        }
+        SimulationRun run = registry.ownerOf(paymentId).orElse(null);
+        long now = run == null ? -1 : run.virtualElapsedMs(clock.instant());
+        if (run == null || now < 0) {
+            return error(HttpStatus.NOT_FOUND, "no such payment");
+        }
+        PaymentTruth acted;
+        try {
+            acted = run.act(paymentId, target, now);
+        } catch (IllegalStateException e) {
+            return error(HttpStatus.CONFLICT, "payment is " + e.getMessage() + ", not AUTHORIZED");
+        }
+        dispatcher.sendNow(run, acted, target, now);
+        return ResponseEntity.ok(dialect.statusBody(acted, target, run.startedAt()));
     }
 
     private static ResponseEntity<Map<String, Object>> error(HttpStatus status, String message) {

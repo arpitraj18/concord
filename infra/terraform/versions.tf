@@ -34,6 +34,7 @@ provider "aws" {
     lambda       = local.endpoint
     logs         = local.endpoint
     s3           = local.endpoint
+    scheduler    = local.endpoint
     sqs          = local.endpoint
     sts          = local.endpoint
   }

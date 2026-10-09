@@ -30,3 +30,11 @@ output "payments_stream_arn" {
 output "state_worker_policy_arn" {
   value = aws_iam_policy.state_worker.arn
 }
+
+output "delivery_dlq_url" {
+  value = aws_sqs_queue.delivery_dlq.url
+}
+
+output "delivery_worker_policy_arn" {
+  value = aws_iam_policy.delivery_worker.arn
+}

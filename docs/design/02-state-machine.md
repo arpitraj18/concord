@@ -153,8 +153,8 @@ that is the resolver (Phase 3) and the divergence detector (Phase 4).
 ## Running it
 
 ```bash
-mvn -pl state-engine -am package -DskipTests
-GATEWAY_A_SECRETS=whsec_a java -cp state-engine/target/state-engine-*-all.jar dev.concord.engine.local.LocalConcord
+mvn -pl local-runner -am package -DskipTests      # (the all-in-one runner moved to local-runner in Phase 3)
+GATEWAY_A_SECRETS=whsec_a java -jar local-runner/target/local-runner-*-all.jar
 SIM_GATEWAY=A SIM_WEBHOOK_SECRET=whsec_a SIM_TARGET_URL=http://localhost:8080/webhooks/a \
     java -jar gateway-simulator/target/gateway-simulator-*-exec.jar
 scripts/run-scenario.sh gateway-simulator/scenarios/phase0-done-when.json

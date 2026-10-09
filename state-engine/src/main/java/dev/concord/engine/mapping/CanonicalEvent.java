@@ -11,6 +11,7 @@ import java.time.Instant;
  * @param amountMinor  amount in minor units (paise, cents), null if the payload does not carry it
  * @param occurredAt   the gateway's own timestamp; kept for audits, never used to order events
  * @param receivedAt   when ingestion received it; used to order replays
+ * @param source       webhook, status API, timeout or registration
  */
 public record CanonicalEvent(
         Gateway gateway,
@@ -24,7 +25,8 @@ public record CanonicalEvent(
         Instant occurredAt,
         Instant receivedAt,
         String mappingId,
-        String archiveKey) {
+        String archiveKey,
+        EventSource source) {
 
     public String paymentKey() {
         return gateway + "#" + paymentId;
