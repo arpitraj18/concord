@@ -15,20 +15,27 @@ public final class EmbeddedMerchant implements AutoCloseable {
     private final ConfigurableApplicationContext app;
 
     public EmbeddedMerchant(String concordSecret) {
+        this(concordSecret, new String[0]);
+    }
+
+    /** @param extraArgs more command-line settings, e.g. "--merchant.checkout-timeout-ms=2000" */
+    public EmbeddedMerchant(String concordSecret, String... extraArgs) {
         try {
             postgres = EmbeddedPostgres.start();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
         // Command-line arguments, not builder.properties(): those are only defaults (see what-broke.md).
-        app = new SpringApplicationBuilder(SampleMerchantApplication.class).run(
+        java.util.List<String> args = new java.util.ArrayList<>(java.util.List.of(
                 "--spring.config.name=" + SampleMerchantApplication.CONFIG_NAME,
                 "--server.port=0",
                 "--spring.datasource.url=" + postgres.getJdbcUrl("postgres", "postgres"),
                 "--spring.datasource.username=postgres",
                 "--spring.datasource.password=postgres",
                 "--merchant.concord-secret=" + concordSecret,
-                "--spring.main.banner-mode=off");
+                "--spring.main.banner-mode=off"));
+        args.addAll(java.util.List.of(extraArgs));
+        app = new SpringApplicationBuilder(SampleMerchantApplication.class).run(args.toArray(String[]::new));
     }
 
     public String baseUrl() {

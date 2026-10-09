@@ -19,10 +19,12 @@ gateway or an orchestrator.
 | 1 | Ingestion + raw event log (Lambda, S3, SQS FIFO, dedup) | **done** |
 | 2 | Canonical state machine + DynamoDB state store | **done** |
 | 3 | Uncertainty resolver + exactly-once delivery (outbox) | **done** |
-| 4 | Divergence detector + dashboard | next |
-| 5 | AI layer: gateway onboarding, anomaly detection, incident explanations | planned |
+| 4 | Divergence detector + dashboard | **done** |
+| 5 | AI layer: gateway onboarding, anomaly detection, incident explanations | next |
 | 6 | Hardening, load/chaos testing, deployment | planned |
 | 7 | (stretch) on-chain stablecoin settlement source | planned |
+
+![Concord dashboard](docs/images/dashboard-light.png)
 
 ## Architecture (target)
 
@@ -53,8 +55,9 @@ ingestion/           Phase 1: verify, archive, dedupe, enqueue (plain Java 21; A
 state-engine/        Phase 2: canonical state machine, gateway mappings (JSON), DynamoDB store, SQS worker, replay
 resolver/            Phase 3: status-API resolver (backoff, circuit breaker, corrections, capture/release)
 delivery/            Phase 3: outbox via DynamoDB Streams -> merchant, in order, retried, dead-lettered
+divergence/          Phase 4: gateway vs Concord vs merchant order: classify, score, raise and resolve incidents
 sample-merchant/     Phase 3: a shop on PostgreSQL that applies Concord's events exactly once (no shared code)
-local-runner/        All of Concord in one process, in memory (local development, docker compose)
+local-runner/        All of Concord in one process, in memory, plus the dashboard (local development, docker compose)
 system-tests/        End-to-end tests of the whole system against the hostile simulator
 infra/terraform/     AWS infrastructure (S3, DynamoDB, SQS FIFO, Lambda, API Gateway), LocalStack-capable
 docs/design/         One design note per phase: problem, options, choice, why
@@ -94,6 +97,14 @@ curl -s -X POST localhost:8081/sim/runs -H 'Content-Type: application/json' \
 curl -s localhost:8080/local/resolver; curl -s localhost:8080/local/delivery; curl -s localhost:8090/stats
 ```
 
+Dashboard: <http://localhost:8080/>. To see the divergence detector catch the classic merchant bugs
+(order cancelled by a checkout timeout while the payment was only late, order shipped on a browser
+redirect, refund event lost):
+
+```bash
+scripts/phase4_demo.py
+```
+
 Drive it:
 
 ```bash
@@ -110,7 +121,8 @@ Design notes, with the reasoning behind every decision:
 [Phase 0 — simulators](docs/design/00-gateway-simulators.md),
 [Phase 1 — ingestion](docs/design/01-ingestion.md),
 [Phase 2 — state machine](docs/design/02-state-machine.md),
-[Phase 3 — resolver and delivery](docs/design/03-resolver-and-delivery.md).
+[Phase 3 — resolver and delivery](docs/design/03-resolver-and-delivery.md),
+[Phase 4 — divergence detector and dashboard](docs/design/04-divergence-detector.md).
 
 Deploy ingestion to AWS (or LocalStack with `-var localstack=true`):
 

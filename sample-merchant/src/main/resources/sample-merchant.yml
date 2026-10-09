@@ -16,3 +16,9 @@ merchant:
   concord-secret: ${CONCORD_DELIVERY_SECRET:whsec_concord_dev}
   signature-tolerance-seconds: 300
   concord-register-url: ${CONCORD_REGISTER_URL:}
+  # The classic bug Phase 4 exists to catch: unpaid orders are cancelled after a fixed checkout timeout,
+  # even if the payment is merely late (missed webhook) and captures afterwards. 0 disables the job.
+  checkout-timeout-ms: ${MERCHANT_CHECKOUT_TIMEOUT_MS:900000}
+  timeout-check-interval-ms: ${MERCHANT_TIMEOUT_CHECK_MS:5000}
+  # Fault injection: answer 503 to every Concord event for these orders (they end up dead-lettered).
+  reject-events-for-orders: ${MERCHANT_REJECT_EVENTS_FOR:}

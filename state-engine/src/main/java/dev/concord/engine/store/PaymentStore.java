@@ -32,6 +32,15 @@ public interface PaymentStore {
     /** Payments in {@code state} last updated in [from, to), oldest first. */
     List<PaymentRecord> findInStateBetween(CanonicalState state, Instant from, Instant to, int limit);
 
+    /**
+     * Every payment in {@code state} last updated in [from, to), oldest first, read page by page (the
+     * divergence detector's windowed sweep). The default reads everything at once; DynamoDB pages.
+     */
+    default void forEachInStateBetween(CanonicalState state, Instant from, Instant to, int pageSize,
+                                       java.util.function.Consumer<PaymentRecord> consumer) {
+        findInStateBetween(state, from, to, Integer.MAX_VALUE).forEach(consumer);
+    }
+
     /** Payments flagged for verification (a sparse index: only flagged payments are in it). */
     List<PaymentRecord> findFlagged(int limit);
 

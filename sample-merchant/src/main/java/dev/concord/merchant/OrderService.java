@@ -86,7 +86,7 @@ public class OrderService {
         // A cancelled order stays cancelled; the payment state is still recorded so the mismatch is visible
         // (a captured payment on a cancelled order is exactly what Phase 4's divergence detector looks for).
         String newStatus = oldStatus.equals("CANCELLED") ? "CANCELLED" : orderStatusFor(e.state());
-        jdbc.update("UPDATE orders SET status = ?, payment_state = ?, payment_version = ?, updated_at = now() WHERE order_id = ?",
+        jdbc.update("UPDATE orders SET status = ?, payment_state = ?, payment_version = ?, updated_at = clock_timestamp() WHERE order_id = ?",
                 newStatus, e.state(), e.version(), orderId);
         String effect = newStatus.equals(oldStatus) ? null : effectFor(oldStatus, newStatus);
         if (effect != null) {
@@ -103,13 +103,59 @@ public class OrderService {
 
     /** The merchant gives up on an unpaid order (e.g. a 15-minute checkout timeout). */
     public boolean cancel(String orderId) {
-        return jdbc.update("UPDATE orders SET status = 'CANCELLED', updated_at = now() WHERE order_id = ? "
+        return jdbc.update("UPDATE orders SET status = 'CANCELLED', updated_at = clock_timestamp() WHERE order_id = ? "
                 + "AND status = 'AWAITING_PAYMENT'", orderId) == 1;
     }
 
+    /**
+     * The naive checkout timeout most shops have: cancel every order still awaiting payment after a fixed
+     * time. It ignores that the payment may simply be late (a missed webhook) and capture afterwards,
+     * which is exactly how "paid but cancelled" happens.
+     */
+    public int cancelTimedOut(java.time.Duration timeout) {
+        return jdbc.update("UPDATE orders SET status = 'CANCELLED', updated_at = clock_timestamp() "
+                + "WHERE status = 'AWAITING_PAYMENT' AND created_at < clock_timestamp() - make_interval(secs => ?)",
+                timeout.toMillis() / 1000.0);
+    }
+
+    /**
+     * The other classic bug: trusting the customer's browser coming back to a "payment successful" page
+     * and marking the order paid (and shipping) without a confirmed payment. Produces "unpaid but fulfilled".
+     */
+    @Transactional
+    public boolean markPaidFromRedirect(String orderId) {
+        int n = jdbc.update("UPDATE orders SET status = 'PAID', updated_at = clock_timestamp() "
+                + "WHERE order_id = ? AND status = 'AWAITING_PAYMENT'", orderId);
+        if (n == 1) {
+            jdbc.update("INSERT INTO effects (order_id, effect, idempotency_key) VALUES (?, 'FULFIL', ?)",
+                    orderId, "redirect#" + orderId);
+        }
+        return n == 1;
+    }
+
+    static final String ORDER_COLUMNS = "order_id, gateway, payment_id, amount_minor, currency, status, payment_state, "
+            + "payment_version, to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS updated_at";
+
     public Optional<Map<String, Object>> find(String orderId) {
-        return jdbc.queryForList("SELECT order_id, gateway, payment_id, amount_minor, currency, status, payment_state, "
-                + "payment_version FROM orders WHERE order_id = ?", orderId).stream().findFirst();
+        return jdbc.queryForList("SELECT " + ORDER_COLUMNS + " FROM orders WHERE order_id = ?", orderId).stream().findFirst();
+    }
+
+    /**
+     * Orders changed after a cursor, oldest first: keyset pagination on (updated_at, order_id). Unlike
+     * OFFSET, it never skips or repeats rows while orders keep changing, and every page is one index range
+     * scan on orders_by_change. The cursor keeps microseconds (PostgreSQL's precision) as text.
+     *
+     * <p>Rows younger than {@code safetyLag} are not returned yet: a transaction can stamp updated_at and
+     * commit only later, after a reader has already moved its cursor past that time, and the change would
+     * be missed forever. Anything older than the lag (far longer than any transaction here) is committed.
+     */
+    public List<Map<String, Object>> changedSince(String sinceUpdatedAt, String afterOrderId, int limit,
+                                                  java.time.Duration safetyLag) {
+        return jdbc.queryForList("SELECT " + ORDER_COLUMNS + " FROM orders "
+                + "WHERE (orders.updated_at, order_id) > (?::timestamptz, ?) "
+                + "AND orders.updated_at < clock_timestamp() - make_interval(secs => ?) "
+                + "ORDER BY orders.updated_at, order_id LIMIT ?",
+                sinceUpdatedAt, afterOrderId == null ? "" : afterOrderId, safetyLag.toMillis() / 1000.0, limit);
     }
 
     public Map<String, Object> stats() {

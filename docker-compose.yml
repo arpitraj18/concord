@@ -2,7 +2,8 @@
 #   3 fake gateways -> Concord (ingestion + engine + resolver + delivery, in memory) -> sample merchant (PostgreSQL)
 #
 #   docker compose up --build
-#   then follow "Try it" in README.md (create orders, run a scenario, compare truth, Concord and merchant)
+#   open http://localhost:8080/   (Concord dashboard)
+#   scripts/phase4_demo.py        (inject the classic merchant bugs and watch them get flagged)
 x-simulator: &simulator
   build:
     context: .
@@ -38,6 +39,9 @@ services:
       MERCHANT_DB_PASSWORD: merchant
       CONCORD_DELIVERY_SECRET: whsec_concord_dev
       CONCORD_REGISTER_URL: http://concord:8080/payments/register
+      # Real shops use ~15 minutes; 4 s makes the "order timed out before the payment arrived" bug quick to demo.
+      MERCHANT_CHECKOUT_TIMEOUT_MS: 4000
+      MERCHANT_TIMEOUT_CHECK_MS: 500
 
   concord:
     build:

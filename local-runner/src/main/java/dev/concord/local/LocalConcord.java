@@ -5,6 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.sun.net.httpserver.HttpExchange;
 import dev.concord.delivery.DeliverySigner;
+import dev.concord.divergence.DetectorConfig;
+import dev.concord.divergence.DetectorStateStore;
+import dev.concord.divergence.DivergenceDetector;
+import dev.concord.divergence.InMemoryIncidentStore;
 import dev.concord.delivery.DeliveryWorker;
 import dev.concord.engine.StateEngine;
 import dev.concord.engine.mapping.Normalizer;
@@ -49,12 +53,17 @@ import java.util.concurrent.atomic.AtomicInteger;
  * POST /payments/register           {gateway, paymentId, orderId, amountMinor, currency}
  * GET  /local/payments/{gw}/{id}    canonical state, history and outbox
  * GET  /local/stats  /local/engine  /local/resolver  /local/delivery
+ * GET  /                            the dashboard (React, no build step)
+ * GET  /api/summary  /api/incidents  /api/payments  /api/payments/{gw}/{id}
  * </pre>
  */
 public final class LocalConcord {
 
     private LocalConcord() {
     }
+
+    static final DetectorConfig DETECTOR_DEMO = new DetectorConfig(Duration.ofSeconds(5), Duration.ofSeconds(3),
+            Duration.ofDays(1), Duration.ofSeconds(60), 200);
 
     static final ResolverConfig DEMO = new ResolverConfig(Duration.ofSeconds(5), Duration.ofSeconds(20),
             Duration.ofSeconds(10), Duration.ofSeconds(60), Duration.ofSeconds(5), Duration.ofHours(1),
@@ -113,7 +122,7 @@ public final class LocalConcord {
         if (!endpoints.isEmpty()) {
             HttpGatewayClient gateways = new HttpGatewayClient(endpoints, normalizer, json, Duration.ofSeconds(3),
                     HttpGatewayClient.Limits.defaults());
-            MerchantOrders orders = merchantUrl == null ? id -> MerchantOrders.OrderStatus.UNKNOWN
+            MerchantOrders orders = merchantUrl == null ? id -> Optional.empty()
                     : new HttpMerchantOrders(merchantUrl, json);
             ResolverConfig rc = "default".equals(env.get("RESOLVER_PROFILE")) ? ResolverConfig.defaults() : DEMO;
             Resolver resolver = new Resolver(engine, normalizer, gateways, gateways, orders, resolverStates, rc, clock);
@@ -128,6 +137,41 @@ public final class LocalConcord {
                 }
             });
         }
+
+        // divergence detector: outbox changes, merchant change feed, periodic sweep
+        InMemoryIncidentStore incidents = new InMemoryIncidentStore();
+        DivergenceDetector detector = null;
+        Map<String, Integer> detectorTotals = new java.util.concurrent.ConcurrentHashMap<>();
+        if (!endpoints.isEmpty() && merchantUrl != null && !merchantUrl.isBlank()) {
+            HttpGatewayClient statusForDetector = new HttpGatewayClient(endpoints, normalizer, json, Duration.ofSeconds(3),
+                    HttpGatewayClient.Limits.defaults());
+            DetectorConfig dc = "default".equals(env.get("RESOLVER_PROFILE")) ? DetectorConfig.defaults() : DETECTOR_DEMO;
+            DivergenceDetector d = new DivergenceDetector(engine, statusForDetector, new HttpMerchantOrders(merchantUrl, json),
+                    incidents, new DetectorStateStore.InMemory(), dc, clock);
+            store.onOutbox(d::onOutbox);
+            detector = d;
+            Thread.ofPlatform().daemon().name("detector").start(() -> {
+                long lastSweep = 0;
+                while (true) {
+                    try {
+                        detectorTotals.merge("merchantChanges", d.pollMerchantChanges(), Integer::sum);
+                        detectorTotals.merge("triggeredChecks", d.runDue(), Integer::sum);
+                        if (System.currentTimeMillis() - lastSweep > 10_000) {
+                            detectorTotals.merge("sweptChecks", d.sweep(), Integer::sum);
+                            lastSweep = System.currentTimeMillis();
+                        }
+                    } catch (RuntimeException ex) {
+                        System.err.println("detector failed: " + ex);
+                    }
+                    sleep(500);
+                }
+            });
+        }
+
+        DeliveryWorker deliveryRef = delivery;
+        Api api = new Api(json, store, incidents, resolverStates, resolverTotals, detectorTotals, consumed, deliveryRef, deadLetters);
+        server.addHandler("/api/", api::handle);
+        server.addHandler("/", Api::serveDashboard);
 
         server.addHandler("/payments/register", ex -> {
             JsonNode b = json.readTree(ex.getRequestBody().readAllBytes());
@@ -163,11 +207,12 @@ public final class LocalConcord {
             body.put("resolver", resolverStates.get(rec.get().key()).orElse(null));
             reply(ex, 200, json.writeValueAsString(body));
         });
-        System.out.printf("concord (local, in memory) on :%d; ingestion %s; resolver %s; delivery %s%n", server.port(),
-                config.secrets().keySet(), endpoints.keySet(), merchantUrl == null ? "off" : merchantUrl);
+        System.out.printf("concord (local, in memory) on :%d; ingestion %s; resolver %s; delivery %s; detector %s; dashboard http://localhost:%d/%n",
+                server.port(), config.secrets().keySet(), endpoints.keySet(), merchantUrl == null ? "off" : merchantUrl,
+                detector == null ? "off" : "on", server.port());
     }
 
-    private static void reply(HttpExchange ex, int status, String body) throws IOException {
+    static void reply(HttpExchange ex, int status, String body) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         ex.getResponseHeaders().set("Content-Type", "application/json");
         ex.sendResponseHeaders(status, bytes.length);

@@ -170,6 +170,21 @@ public final class DynamoDbPaymentStore implements PaymentStore {
         return dynamo.query(request).items().stream().map(DynamoDbPaymentStore::toRecord).toList();
     }
 
+    /** Pages through the window with LastEvaluatedKey (the SDK paginator), {@code pageSize} items per request. */
+    @Override
+    public void forEachInStateBetween(CanonicalState state, Instant from, Instant to, int pageSize,
+                                      java.util.function.Consumer<PaymentRecord> consumer) {
+        if (!to.isAfter(from)) {
+            return;
+        }
+        QueryRequest request = QueryRequest.builder().tableName(table).indexName(GSI1)
+                .keyConditionExpression(GSI1_PK + " = :s AND " + GSI1_SK + " BETWEEN :from AND :to")
+                .expressionAttributeValues(Map.of(":s", s("STATE#" + state), ":from", s(sortable(from)),
+                        ":to", s(sortable(to.minusNanos(1)))))
+                .limit(pageSize).build();
+        dynamo.queryPaginator(request).items().forEach(i -> consumer.accept(toRecord(i)));
+    }
+
     @Override
     public List<PaymentRecord> findFlagged(int limit) {
         QueryRequest request = QueryRequest.builder().tableName(table).indexName(GSI2)

@@ -24,6 +24,7 @@
         <module>state-engine</module>
         <module>resolver</module>
         <module>delivery</module>
+        <module>divergence</module>
         <module>sample-merchant</module>
         <module>local-runner</module>
         <module>system-tests</module>

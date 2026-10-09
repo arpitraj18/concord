@@ -142,3 +142,27 @@ configure a database.
 
 **Change:** the merchant uses its own config name (`sample-merchant.yml`); the simulator explicitly
 excludes database auto-configuration.
+
+## 2026-10-11 — The dashboard overflowed a phone screen by 306 px
+
+**Phase:** 4 (Playwright check at 390 px wide)
+
+**What happened:** the page scrolled sideways on a phone although every table sat inside a scrolling
+container.
+
+**Why:** `main` was a CSS grid with an implicit `auto` column, which grows to the widest child's
+minimum width, here a table. The table's own `overflow-x: auto` never kicked in.
+
+**Change:** `grid-template-columns: minmax(0, 1fr)`. Lesson: look at the UI at phone width in a real
+browser; the desktop screenshot looked perfect.
+
+## 2026-10-11 — Cleanup killed the shell running it (again)
+
+**Phase:** 2 and 4 (local smoke tests)
+
+**What happened:** `pkill -f local-runner-0` (and earlier `pkill -f LocalConcord`) matched the shell
+command that contained that very text, killed it, and left the other processes running; a stray
+simulator then delivered webhooks into the next run.
+
+**Change:** match the process itself (`pgrep -f "^java -jar"`), and check afterwards that nothing is
+left. Lesson: process cleanup is code too, and it needs a test.

@@ -103,6 +103,23 @@ public final class StateEngine {
     }
 
     /**
+     * Marks a payment for verification from outside (e.g. the divergence detector saw the gateway
+     * disagree with Concord). The resolver picks flagged payments up and settles them.
+     */
+    public ProcessResult flag(Gateway gateway, String paymentId, String reason) {
+        return withRetry(gateway, paymentId, current -> {
+            if (!current.exists() || current.needsVerification()) {
+                return null;
+            }
+            Instant now = clock.instant();
+            PaymentRecord flagged = withState(current, current.state(), true, reason, now);
+            HistoryEntry h = internalHistory("FLAG#" + UUID.randomUUID(), "concord.flagged: " + reason, null,
+                    EventOutcome.CONTRADICTION, current, flagged, List.of(), now, EventSource.STATUS_API);
+            return new Commit(current.key(), current.version(), Optional.of(flagged), h, Optional.empty());
+        });
+    }
+
+    /**
      * Replaces a wrong state with the status API's. Only applied if the payment is still at
      * {@code expectedVersion} (the version the resolver's two confirmations were made against); if
      * anything happened since, the resolver must look again.

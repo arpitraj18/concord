@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS orders (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS orders_by_payment ON orders (gateway, payment_id);
+-- Serves the "orders changed since" feed (keyset pagination on (updated_at, order_id)) and the checkout timeout job.
+CREATE INDEX IF NOT EXISTS orders_by_change ON orders (updated_at, order_id);
+CREATE INDEX IF NOT EXISTS orders_awaiting ON orders (created_at) WHERE status = 'AWAITING_PAYMENT';
 
 -- One row per Concord event ever received: the primary key IS the deduplication.
 CREATE TABLE IF NOT EXISTS processed_events (

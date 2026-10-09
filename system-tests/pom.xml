@@ -33,6 +33,7 @@
     <dependencies>
         <dependency><groupId>dev.concord</groupId><artifactId>resolver</artifactId><version>${project.version}</version><scope>test</scope></dependency>
         <dependency><groupId>dev.concord</groupId><artifactId>delivery</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>dev.concord</groupId><artifactId>divergence</artifactId><version>${project.version}</version><scope>test</scope></dependency>
         <dependency><groupId>dev.concord</groupId><artifactId>state-engine</artifactId><version>${project.version}</version><type>test-jar</type><scope>test</scope></dependency>
         <dependency><groupId>dev.concord</groupId><artifactId>ingestion</artifactId><version>${project.version}</version><type>test-jar</type><scope>test</scope></dependency>
         <dependency>

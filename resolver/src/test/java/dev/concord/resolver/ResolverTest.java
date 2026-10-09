@@ -52,7 +52,9 @@ class ResolverTest {
     final Map<String, MerchantOrders.OrderStatus> orders = new HashMap<>();
     final InMemoryResolverStateStore resolverStates = new InMemoryResolverStateStore();
     final Resolver resolver = new Resolver(engine, normalizer, gateway, gateway,
-            id -> orders.getOrDefault(id, MerchantOrders.OrderStatus.UNKNOWN), resolverStates, CONFIG, clock);
+            id -> java.util.Optional.ofNullable(orders.get(id)).map(st -> new dev.concord.resolver.merchant.MerchantOrder(id, "A",
+                    null, st == MerchantOrders.OrderStatus.CANCELLED ? "CANCELLED" : "AWAITING_PAYMENT", 100L, "INR", null, null)),
+            resolverStates, CONFIG, clock);
 
     PaymentRecord payment(String id) {
         return store.find(Gateway.A, id).orElseThrow();
